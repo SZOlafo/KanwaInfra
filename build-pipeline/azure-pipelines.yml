@@ -1,0 +1,79 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  - main
+
+pool:
+  name: Asuka
+
+stages:
+
+- stage: 'Build'
+  jobs: 
+  - job: 'Build'
+    steps:
+      - task: UseDotNet@2
+        inputs:
+          version: '8.x'
+        displayName: 'Install .NET'
+
+      - task: UseNode@1
+        inputs:
+          version: '20.12.1'
+        displayName: 'Install Node.js'
+
+      - script: |
+          npm install --global yarn
+        displayName: 'Install yarn'
+
+      - script: |
+          yarn install
+        displayName: 'yarn install'
+
+      - script: |
+          npx nx lint kanwa.frontend --max-warnings=0
+          npx nx lint kanwa
+        displayName: 'nx lint'
+
+      - script: |
+          npx nx test kanwa.frontend --maxWorkers=4 --passWithNoTests
+          npx nx test kanwa
+        displayName: 'nx test'
+
+      - script: |
+          npx nx build kanwa.frontend --prod
+          npx nx build kanwa --prod
+        displayName: 'nx build'
+
+      - script: |
+          mkdir ./dist/apps/kanwa/net8.0/wwwroot
+          cp -rf ./dist/apps/kanwa.frontend/browser/* ./dist/apps/kanwa/net8.0/wwwroot
+        displayName: 'Copy Frontend'
+
+      - publish: './dist/apps/kanwa/net8.0'
+        artifact: webapp
+        displayName: 'Publish Artifact'
+
+- stage: 'Rin'
+  trigger: manual
+  jobs:
+  - job: 'Rin'
+    variables:
+    - group: RinDeploy
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifactName: 'webapp'
+        targetPath: ./dist
+      displayName: 'Download Artifact'
+
+    - task: DockerInstaller@0
+      displayName: 'Install Docker'
+
+    - script: |
+        docker build -t $(DockerRegistryUrl)/kanwa:$(Build.SourceVersion) .
+        docker push $(DockerRegistryUrl)/kanwa:$(Build.SourceVersion)
+      displayName: 'Docker Build and Push Image'
